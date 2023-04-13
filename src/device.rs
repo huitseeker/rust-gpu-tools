@@ -1,9 +1,10 @@
 use std::fmt;
 
-use lazy_static::lazy_static;
 use log::debug;
 #[cfg(all(feature = "opencl", feature = "cuda"))]
 use log::warn;
+#[cfg(any(feature = "opencl", feature = "cuda"))]
+use once_cell::sync::OnceCell;
 
 use std::convert::TryFrom;
 use std::mem;
@@ -26,17 +27,21 @@ const NVIDIA_DEVICE_VENDOR_STRING: &str = "NVIDIA Corporation";
 const NVIDIA_DEVICE_VENDOR_ID: u32 = 0x10de;
 
 #[cfg(feature = "cuda")]
-lazy_static! {
-    // The owned CUDA contexts are stored globally. Each devives contains an unowned reference,
-    // so that devices can be cloned.
-    static ref DEVICES: (Vec<Device>, cuda::utils::CudaContexts) = build_device_list();
-}
+// The owned CUDA contexts are stored globally. Each device contains an unowned reference,
+// so that devices can be cloned.
+type DEVICEST = (Vec<Device>, cuda::utils::CudaContexts);
 
 #[cfg(all(feature = "opencl", not(feature = "cuda")))]
-lazy_static! {
-    // Keep it as a tuple as the CUDA case, so that the using `DEVICES` is independent of the
-    // features set.
-    static ref DEVICES: (Vec<Device>, ()) = build_device_list();
+// Keep it as a tuple as the CUDA case, so that the using `DEVICES` is independent of the
+// features set.
+type DEVICEST = (Vec<Device>, ());
+
+#[cfg(any(feature = "opencl", feature="cuda"))]
+static DEVICES: OnceCell<DEVICEST> = OnceCell::new();
+
+#[cfg(any(feature = "opencl", feature="cuda"))]
+fn devices() -> &'static DEVICEST {
+    DEVICES.get_or_init(|| build_device_list())
 }
 
 /// The PCI-ID is the combination of the PCI Bus ID and PCI Device ID.
